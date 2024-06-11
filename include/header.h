@@ -1,0 +1,10 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include "RTClib.h"
+#include <SPI.h>
+#include <SD.h>
+#include "max6675.h"
+#include "ezButton.h"
+#include "control.h"
+#include <EEPROMex.h>
