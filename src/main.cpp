@@ -1,4 +1,20 @@
-#include "header.h"
+#include <Arduino.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include "RTClib.h"
+#include <SPI.h>
+#include <SD.h>
+#include "max6675.h"
+#include "ezButton.h"
+#include "control.h"
+#include <EEPROMex.h>
+
+// COMPONENTS DECLARATION
+RTC_DS3231 rtc;
+char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+const int chipSelect = 7;
+File myFile;
+LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 // Temp Sensor Declarations
 int soPin = 50;  // SO=Serial Out
@@ -361,47 +377,6 @@ void ReadButtons()
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         INITIALIZE METHOD                                                                  |
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
-
-void printScreens()
-{
-  if (settingFlag == true)
-  {
-    if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
-    {
-      printSettingScreen(setting_items[currentSettingScreen][0], setting_items[currentSettingScreen][1], parametersTimer[currentSettingScreen], settingEditFlag, true);
-    }
-    else
-    {
-      printSettingScreen(setting_items[currentSettingScreen][0], setting_items[currentSettingScreen][1], parametersTimer[currentSettingScreen], settingEditFlag, false);
-    }
-  }
-  else if (testMenuFlag == true)
-  {
-    switch (currentTestMenuScreen)
-    {
-    case 0:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "", !ContactorVFD.isTimerCompleted(), false);
-      break;
-    case 1:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "", !RunVFD.isTimerCompleted(), false);
-      break;
-    case 2:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "", !GasValve.isTimerCompleted(), false);
-      break;
-    case 3:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "", true, true);
-      break;
-
-    default:
-      break;
-    }
-  }
-  else
-  {
-    printMainMenu(menu_items[currentMainScreen][0], menu_items[currentMainScreen][1]);
-  }
-}
-
 void printMainMenu(String MenuItem, String Action)
 {
   lcd.clear();
@@ -478,6 +453,49 @@ void printTestScreen(String TestMenuTitle, String Job, bool Status, bool ExitFla
 	refreshScreen = false;
 }
 
+
+void printScreens()
+{
+  if (settingFlag == true)
+  {
+    if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+    {
+      printSettingScreen(setting_items[currentSettingScreen][0], setting_items[currentSettingScreen][1], parametersTimer[currentSettingScreen], settingEditFlag, true);
+    }
+    else
+    {
+      printSettingScreen(setting_items[currentSettingScreen][0], setting_items[currentSettingScreen][1], parametersTimer[currentSettingScreen], settingEditFlag, false);
+    }
+  }
+  else if (testMenuFlag == true)
+  {
+    switch (currentTestMenuScreen)
+    {
+    case 0:
+      printTestScreen(testmachine_items[currentTestMenuScreen], "", !ContactorVFD.isTimerCompleted(), false);
+      break;
+    case 1:
+      printTestScreen(testmachine_items[currentTestMenuScreen], "", !RunVFD.isTimerCompleted(), false);
+      break;
+    case 2:
+      printTestScreen(testmachine_items[currentTestMenuScreen], "", !GasValve.isTimerCompleted(), false);
+      break;
+    case 3:
+      printTestScreen(testmachine_items[currentTestMenuScreen], "", true, true);
+      break;
+
+    default:
+      break;
+    }
+  }
+  else
+  {
+    printMainMenu(menu_items[currentMainScreen][0], menu_items[currentMainScreen][1]);
+  }
+}
+
+
+
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         READ SENSOR METHODS                                                                |
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
@@ -511,12 +529,7 @@ void readSensors()
   pressure = pressureValue;                                                                                   // Read Pressure
 }
 
-// COMPONENTS DECLARATION
-LiquidCrystal_I2C lcd(0x27, 20, 4);
-RTC_DS3231 rtc;
-char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-const int chipSelect = 7;
-File myFile;
+
 
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         INITIALIZE METHOD                                                                  |
@@ -582,6 +595,9 @@ void setup()
 void loop()
 {
   ReadButtons();
+  if(refreshScreen == true){
+    printMainMenu();
+  }
 }
 
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
