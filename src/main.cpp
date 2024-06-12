@@ -12,6 +12,9 @@
 // COMPONENTS DECLARATION
 RTC_DS3231 rtc;
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+#define CLOCK_INTERRUPT_PIN 19
+
+// SD card
 const int chipSelect = 7;
 File myFile;
 LiquidCrystal_I2C lcd(0x27, 20, 4);
@@ -52,7 +55,7 @@ ezButton sensor(hall);
 // Declaration of LCD Variables
 const int NUM_MAIN_ITEMS = 3;
 const int NUM_SETTING_ITEMS = 5;
-const int NUM_TESTMACHINE_ITEMS = 5;
+const int NUM_TESTMACHINE_ITEMS = 4;
 
 int currentMainScreen;
 int currentSettingScreen;
@@ -116,9 +119,9 @@ char *secondsToHHMMSS(int total_seconds)
   return hhmmss_str;
 }
 
-Control ContactorVFD(100);
-Control RunVFD(100);
-Control GasValve(100);
+Control ContactorVFD(A5);
+Control RunVFD(A6);
+Control GasValve(A7);
 
 void stopAll()
 {
@@ -133,245 +136,444 @@ void setTimers()
   RunVFD.setTimer(secondsToHHMMSS(60));
   GasValve.setTimer(secondsToHHMMSS(60));
 }
+// Button Declaration
+static const int buttonPin = 2;
+int buttonStatePrevious = HIGH;
 
-// Buttons
-ezButton prevButton(7);
-ezButton nextButton(7);
-ezButton enterButton(7);
+static const int buttonPin2 = 3;
+int buttonStatePrevious2 = HIGH;
 
-const int LONG_PRESS_TIME = 5000; // 1000 milliseconds
-unsigned long pressedTime = 0;
-unsigned long releasedTime = 0;
+static const int buttonPin3 = 4;
+int buttonStatePrevious3 = HIGH;
+
+unsigned long minButtonLongPressDuration = 2000;
+unsigned long buttonLongPressUpMillis;
+unsigned long buttonLongPressDownMillis;
+unsigned long buttonLongPressEnterMillis;
+bool buttonStateLongPressUp = false;
+bool buttonStateLongPressDown = false;
+bool buttonStateLongPressEnter = false;
+
+const int intervalButton = 50;
+unsigned long previousButtonMillis;
+unsigned long buttonPressDuration;
+unsigned long currentMillis;
+
+const int intervalButton2 = 50;
+unsigned long previousButtonMillis2;
+unsigned long buttonPressDuration2;
+unsigned long currentMillis2;
+
+const int intervalButton3 = 50;
+unsigned long previousButtonMillis3;
+unsigned long buttonPressDuration3;
+unsigned long currentMillis3;
 
 void InitializeButtons()
 {
-  prevButton.setDebounceTime(100);
-  nextButton.setDebounceTime(100);
-  enterButton.setDebounceTime(100);
+  pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(buttonPin2, INPUT_PULLUP);
+  pinMode(buttonPin3, INPUT_PULLUP);
 }
-void ReadButtons()
+
+void readButtonUpState()
 {
-  prevButton.loop();
-  nextButton.loop();
-  enterButton.loop();
-
-  if (menuFlag == false)
+  if (currentMillis - previousButtonMillis > intervalButton)
   {
-    // Enter Menu
-    if (prevButton.isPressed() && nextButton.isPressed() && enterButton.isPressed())
+    int buttonState = digitalRead(buttonPin);
+    if (buttonState == LOW && buttonStatePrevious == HIGH && !buttonStateLongPressUp)
     {
-      pressedTime = millis();
+      buttonLongPressUpMillis = currentMillis;
+      buttonStatePrevious = LOW;
     }
-
-    if (prevButton.isReleased() && nextButton.isReleased() && enterButton.isReleased())
+    buttonPressDuration = currentMillis - buttonLongPressUpMillis;
+    if (buttonState == LOW && !buttonStateLongPressUp && buttonPressDuration >= minButtonLongPressDuration)
     {
-      releasedTime = millis();
-
-      long pressDuration = releasedTime - pressedTime;
-
-      if (pressDuration > LONG_PRESS_TIME)
-      {
-        menuFlag = true;
-      }
+      buttonStateLongPressUp = true;
     }
-  }
-  else if (menuFlag == true)
-  {
-    // ------- START PREV CLICK -------
-    if (prevButton.isPressed())
+    if (buttonStateLongPressUp == true)
     {
-      refreshScreen = true;
-      if (settingFlag == true)
+      // Insert Fast Scroll Up
+      if (menuFlag == true)
       {
-        if (settingEditFlag == true)
-        {
-          if (parametersTimer[currentSettingScreen] <= 0)
-          {
-            parametersTimer[currentSettingScreen] = 0;
-          }
-          else
-          {
-            parametersTimer[currentSettingScreen] -= 0.1;
-          }
-        }
-        else
-        {
-          if (currentSettingScreen == 0)
-          {
-            currentSettingScreen = NUM_SETTING_ITEMS - 1;
-          }
-          else
-          {
-            currentSettingScreen--;
-          }
-        }
-      }
-      else if (testMenuFlag == true)
-      {
-        if (currentTestMenuScreen == 0)
-        {
-          currentTestMenuScreen = NUM_TESTMACHINE_ITEMS - 1;
-        }
-        else
-        {
-          currentTestMenuScreen--;
-        }
-      }
-      else
-      {
-        if (currentMainScreen == 0)
-        {
-          currentMainScreen = NUM_MAIN_ITEMS - 1;
-        }
-        else
-        {
-          currentMainScreen--;
-        }
-      }
-    }
-    // ------- END PREV CLICK -------
-
-    // ------- START NEXT CLICK -------
-    if (nextButton.isPressed())
-    {
-      refreshScreen = true;
-      if (settingFlag == true)
-      {
-        if (settingEditFlag == true)
-        {
-          if (parametersTimer[currentSettingScreen] >= parametersTimerMaxValue[currentSettingScreen] - 1)
-          {
-            parametersTimer[currentSettingScreen] = parametersTimerMaxValue[currentSettingScreen];
-          }
-          else
-          {
-            parametersTimer[currentSettingScreen] += 0.1;
-          }
-        }
-        else
-        {
-          if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
-          {
-            currentSettingScreen = 0;
-          }
-          else
-          {
-            currentSettingScreen++;
-          }
-        }
-      }
-      else if (testMenuFlag == true)
-      {
-        if (currentTestMenuScreen == NUM_TESTMACHINE_ITEMS - 1)
-        {
-          currentTestMenuScreen = 0;
-        }
-        else
-        {
-          currentTestMenuScreen++;
-        }
-      }
-      else
-      {
-        if (currentMainScreen == NUM_MAIN_ITEMS - 1)
-        {
-          currentMainScreen = 0;
-        }
-        else
-        {
-          currentMainScreen++;
-        }
-      }
-    }
-    // ------- END NEXT CLICK -------
-
-    // ------- START ENTER CLICK -------
-    if (enterButton.isPressed())
-    {
-      refreshScreen = true;
-      if (currentMainScreen == 0 && settingFlag == true)
-      {
-        if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
-        {
-          settingFlag = false;
-          saveSettings();
-          loadSettings();
-          currentSettingScreen = 0;
-          setTimers();
-        }
-        else
+        refreshScreen = true;
+        if (settingFlag == true)
         {
           if (settingEditFlag == true)
           {
-            settingEditFlag = false;
+            if (parametersTimer[currentSettingScreen] >= parametersTimerMaxValue[currentSettingScreen] - 1)
+            {
+              parametersTimer[currentSettingScreen] = parametersTimerMaxValue[currentSettingScreen];
+            }
+            else
+            {
+              parametersTimer[currentSettingScreen] += 1;
+            }
           }
           else
           {
-            settingEditFlag = true;
+            if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+            {
+              currentSettingScreen = 0;
+            }
+            else
+            {
+              currentSettingScreen++;
+            }
           }
         }
-      }
-      else if (currentMainScreen == 1 && testMenuFlag == true)
-      {
-        if (currentTestMenuScreen == NUM_TESTMACHINE_ITEMS - 1)
+        else if (testMenuFlag == true)
         {
-          currentMainScreen = 0;
-          currentTestMenuScreen = 0;
-          testMenuFlag = false;
-          stopAll();
-        }
-        else if (currentTestMenuScreen == 0)
-        {
-          if (ContactorVFD.getMotorState() == false)
+          if (currentTestMenuScreen == NUM_TESTMACHINE_ITEMS - 1)
           {
-            ContactorVFD.relayOn();
+            currentTestMenuScreen = 0;
           }
           else
           {
-            ContactorVFD.relayOff();
+            currentTestMenuScreen++;
           }
-        }
-        else if (currentTestMenuScreen == 1)
-        {
-          if (RunVFD.getMotorState() == false)
-          {
-            RunVFD.relayOn();
-          }
-          else
-          {
-            RunVFD.relayOff();
-          }
-        }
-        else if (currentTestMenuScreen == 2)
-        {
-          if (GasValve.getMotorState() == false)
-          {
-            GasValve.relayOn();
-          }
-          else
-          {
-            GasValve.relayOff();
-          }
-        }
-      }
-      else
-      {
-        if (currentMainScreen == 0)
-        {
-          settingFlag = true;
-        }
-        else if (currentMainScreen == 1)
-        {
-          testMenuFlag = true;
         }
         else
         {
-          menuFlag = false;
+          if (currentMainScreen == NUM_MAIN_ITEMS - 1)
+          {
+            currentMainScreen = 0;
+          }
+          else
+          {
+            currentMainScreen++;
+          }
         }
       }
     }
-    // ------- END ENTER CLICK -------
+
+    if (buttonState == HIGH && buttonStatePrevious == LOW)
+    {
+      buttonStatePrevious = HIGH;
+      buttonStateLongPressUp = false;
+      if (buttonPressDuration < minButtonLongPressDuration)
+      {
+        // Short Scroll Up
+        if (menuFlag == true)
+        {
+          refreshScreen = true;
+          if (settingFlag == true)
+          {
+            if (settingEditFlag == true)
+            {
+              if (parametersTimer[currentSettingScreen] >= parametersTimerMaxValue[currentSettingScreen] - 1)
+              {
+                parametersTimer[currentSettingScreen] = parametersTimerMaxValue[currentSettingScreen];
+              }
+              else
+              {
+                parametersTimer[currentSettingScreen] += 1;
+              }
+            }
+            else
+            {
+              if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+              {
+                currentSettingScreen = 0;
+              }
+              else
+              {
+                currentSettingScreen++;
+              }
+            }
+          }
+          else if (testMenuFlag == true)
+          {
+            if (currentTestMenuScreen == NUM_TESTMACHINE_ITEMS - 1)
+            {
+              currentTestMenuScreen = 0;
+            }
+            else
+            {
+              currentTestMenuScreen++;
+            }
+          }
+          else
+          {
+            if (currentMainScreen == NUM_MAIN_ITEMS - 1)
+            {
+              currentMainScreen = 0;
+            }
+            else
+            {
+              currentMainScreen++;
+            }
+          }
+        }
+      }
+    }
+    previousButtonMillis = currentMillis;
   }
+}
+
+void readButtonDownState()
+{
+  if (currentMillis2 - previousButtonMillis2 > intervalButton2)
+  {
+    int buttonState2 = digitalRead(buttonPin2);
+    if (buttonState2 == LOW && buttonStatePrevious2 == HIGH && !buttonStateLongPressDown)
+    {
+      buttonLongPressDownMillis = currentMillis2;
+      buttonStatePrevious2 = LOW;
+    }
+    buttonPressDuration2 = currentMillis2 - buttonLongPressDownMillis;
+    if (buttonState2 == LOW && !buttonStateLongPressDown && buttonPressDuration2 >= minButtonLongPressDuration)
+    {
+      buttonStateLongPressDown = true;
+    }
+    if (buttonStateLongPressDown == true)
+    {
+      if (menuFlag == true)
+      {
+        refreshScreen = true;
+        if (settingFlag == true)
+        {
+          if (settingEditFlag == true)
+          {
+            if (parametersTimer[currentSettingScreen] <= 0)
+            {
+              parametersTimer[currentSettingScreen] = 0;
+            }
+            else
+            {
+              parametersTimer[currentSettingScreen] -= 1;
+            }
+          }
+          else
+          {
+            if (currentSettingScreen == 0)
+            {
+              currentSettingScreen = NUM_SETTING_ITEMS - 1;
+            }
+            else
+            {
+              currentSettingScreen--;
+            }
+          }
+        }
+        else if (testMenuFlag == true)
+        {
+          if (currentTestMenuScreen == 0)
+          {
+            currentTestMenuScreen = NUM_TESTMACHINE_ITEMS - 1;
+          }
+          else
+          {
+            currentTestMenuScreen--;
+          }
+        }
+        else
+        {
+          if (currentMainScreen == 0)
+          {
+            currentMainScreen = NUM_MAIN_ITEMS - 1;
+          }
+          else
+          {
+            currentMainScreen--;
+          }
+        }
+      }
+    }
+
+    if (buttonState2 == HIGH && buttonStatePrevious2 == LOW)
+    {
+      buttonStatePrevious2 = HIGH;
+      buttonStateLongPressDown = false;
+      if (buttonPressDuration2 < minButtonLongPressDuration)
+      {
+        if (menuFlag == true)
+        {
+          refreshScreen = true;
+          if (settingFlag == true)
+          {
+            if (settingEditFlag == true)
+            {
+              if (parametersTimer[currentSettingScreen] <= 0)
+              {
+                parametersTimer[currentSettingScreen] = 0;
+              }
+              else
+              {
+                parametersTimer[currentSettingScreen] -= 1;
+              }
+            }
+            else
+            {
+              if (currentSettingScreen == 0)
+              {
+                currentSettingScreen = NUM_SETTING_ITEMS - 1;
+              }
+              else
+              {
+                currentSettingScreen--;
+              }
+            }
+          }
+          else if (testMenuFlag == true)
+          {
+            if (currentTestMenuScreen == 0)
+            {
+              currentTestMenuScreen = NUM_TESTMACHINE_ITEMS - 1;
+            }
+            else
+            {
+              currentTestMenuScreen--;
+            }
+          }
+          else
+          {
+            if (currentMainScreen == 0)
+            {
+              currentMainScreen = NUM_MAIN_ITEMS - 1;
+            }
+            else
+            {
+              currentMainScreen--;
+            }
+          }
+        }
+      }
+    }
+    previousButtonMillis2 = currentMillis2;
+  }
+}
+
+void readButtonEnterState()
+{
+  if (currentMillis3 - previousButtonMillis3 > intervalButton3)
+  {
+    int buttonState3 = digitalRead(buttonPin3);
+    if (buttonState3 == LOW && buttonStatePrevious3 == HIGH && !buttonStateLongPressEnter)
+    {
+      buttonLongPressEnterMillis = currentMillis3;
+      buttonStatePrevious3 = LOW;
+    }
+    buttonPressDuration3 = currentMillis3 - buttonLongPressEnterMillis;
+    if (buttonState3 == LOW && !buttonStateLongPressEnter && buttonPressDuration3 >= minButtonLongPressDuration)
+    {
+      buttonStateLongPressEnter = true;
+    }
+    if (buttonStateLongPressEnter == true)
+    {
+      // Insert Fast Scroll Enter
+      Serial.println("Long Press Enter");
+      if (menuFlag == false)
+      {
+        refreshScreen = true;
+        menuFlag = true;
+      }
+    }
+
+    if (buttonState3 == HIGH && buttonStatePrevious3 == LOW)
+    {
+      buttonStatePrevious3 = HIGH;
+      buttonStateLongPressEnter = false;
+      if (buttonPressDuration3 < minButtonLongPressDuration)
+      {
+        if (menuFlag == true)
+        {
+          refreshScreen = true;
+          if (currentMainScreen == 0 && settingFlag == true)
+          {
+            if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+            {
+              settingFlag = false;
+              saveSettings();
+              loadSettings();
+              currentSettingScreen = 0;
+              setTimers();
+            }
+            else
+            {
+              if (settingEditFlag == true)
+              {
+                settingEditFlag = false;
+              }
+              else
+              {
+                settingEditFlag = true;
+              }
+            }
+          }
+          else if (currentMainScreen == 1 && testMenuFlag == true)
+          {
+            if (currentTestMenuScreen == NUM_TESTMACHINE_ITEMS - 1)
+            {
+              currentMainScreen = 0;
+              currentTestMenuScreen = 0;
+              testMenuFlag = false;
+              stopAll();
+            }
+            else if (currentTestMenuScreen == 0)
+            {
+              if (ContactorVFD.getMotorState() == false)
+              {
+                ContactorVFD.relayOn();
+              }
+              else
+              {
+                ContactorVFD.relayOff();
+              }
+            }
+            else if (currentTestMenuScreen == 1)
+            {
+              if (RunVFD.getMotorState() == false)
+              {
+                RunVFD.relayOn();
+              }
+              else
+              {
+                RunVFD.relayOff();
+              }
+            }
+            else if (currentTestMenuScreen == 2)
+            {
+              if (GasValve.getMotorState() == false)
+              {
+                GasValve.relayOn();
+              }
+              else
+              {
+                GasValve.relayOff();
+              }
+            }
+          }
+          else
+          {
+            if (currentMainScreen == 0)
+            {
+              settingFlag = true;
+            }
+            else if (currentMainScreen == 1)
+            {
+              testMenuFlag = true;
+            }
+            else
+            {
+              menuFlag = false;
+            }
+          }
+        }
+      }
+    }
+    previousButtonMillis3 = currentMillis3;
+  }
+}
+
+void ReadButtons()
+{
+  currentMillis = millis();
+  currentMillis2 = millis();
+  currentMillis3 = millis();
+  readButtonEnterState();
+  readButtonUpState();
+  readButtonDownState();
 }
 
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
@@ -390,69 +592,68 @@ void printMainMenu(String MenuItem, String Action)
 
 void printSettingScreen(String SettingTitle, String Unit, double Value, bool EditFlag, bool SaveFlag)
 {
-	lcd.clear();
-	lcd.print(SettingTitle);
-	lcd.setCursor(0, 1);
+  lcd.clear();
+  lcd.print(SettingTitle);
+  lcd.setCursor(0, 1);
 
-	if (SaveFlag == true)
-	{
-		lcd.setCursor(0, 3);
-		lcd.write(0);
-		lcd.setCursor(2, 3);
-		lcd.print("ENTER TO SAVE ALL");
-	}
-	else
-	{
-		lcd.print(Value);
-		lcd.print(" ");
-		lcd.print(Unit);
-		lcd.setCursor(0, 3);
-		lcd.write(0);
-		lcd.setCursor(2, 3);
-		if (EditFlag == false)
-		{
-			lcd.print("ENTER TO EDIT");
-		}
-		else
-		{
-			lcd.print("ENTER TO SAVE");
-		}
-	}
-	refreshScreen = false;
+  if (SaveFlag == true)
+  {
+    lcd.setCursor(0, 3);
+    lcd.write(0);
+    lcd.setCursor(2, 3);
+    lcd.print("ENTER TO SAVE ALL");
+  }
+  else
+  {
+    lcd.print(Value);
+    lcd.print(" ");
+    lcd.print(Unit);
+    lcd.setCursor(0, 3);
+    lcd.write(0);
+    lcd.setCursor(2, 3);
+    if (EditFlag == false)
+    {
+      lcd.print("ENTER TO EDIT");
+    }
+    else
+    {
+      lcd.print("ENTER TO SAVE");
+    }
+  }
+  refreshScreen = false;
 }
 
 void printTestScreen(String TestMenuTitle, String Job, bool Status, bool ExitFlag)
 {
-	lcd.clear();
-	lcd.print(TestMenuTitle);
-	if (ExitFlag == false)
-	{
-		lcd.setCursor(0, 2);
-		lcd.print(Job);
-		lcd.print(" : ");
-		if (Status == true)
-		{
-			lcd.print("ON");
-		}
-		else
-		{
-			lcd.print("OFF");
-		}
-	}
+  lcd.clear();
+  lcd.print(TestMenuTitle);
+  if (ExitFlag == false)
+  {
+    lcd.setCursor(0, 2);
+    lcd.print(Job);
+    lcd.print(" : ");
+    if (Status == true)
+    {
+      lcd.print("ON");
+    }
+    else
+    {
+      lcd.print("OFF");
+    }
+  }
 
-	if (ExitFlag == true)
-	{
-		lcd.setCursor(0, 3);
-		lcd.print("Click to Exit Test");
-	}
-	else
-	{
-		lcd.setCursor(0, 3);
-		lcd.print("Click to Run Test");
-	}
-	refreshScreen = false;
+  if (ExitFlag == true)
+  {
+    lcd.setCursor(0, 3);
+    lcd.print("Click to Exit Test");
+  }
+  else
+  {
+    lcd.setCursor(0, 3);
+    lcd.print("Click to Run Test");
+  }
+  refreshScreen = false;
 }
-
 
 void printScreens()
 {
@@ -472,13 +673,13 @@ void printScreens()
     switch (currentTestMenuScreen)
     {
     case 0:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "", !ContactorVFD.isTimerCompleted(), false);
+      printTestScreen(testmachine_items[currentTestMenuScreen], "Status", ContactorVFD.getMotorState(), false);
       break;
     case 1:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "", !RunVFD.isTimerCompleted(), false);
+      printTestScreen(testmachine_items[currentTestMenuScreen], "Status", RunVFD.getMotorState(), false);
       break;
     case 2:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "", !GasValve.isTimerCompleted(), false);
+      printTestScreen(testmachine_items[currentTestMenuScreen], "Status", GasValve.getMotorState(), false);
       break;
     case 3:
       printTestScreen(testmachine_items[currentTestMenuScreen], "", true, true);
@@ -493,8 +694,6 @@ void printScreens()
     printMainMenu(menu_items[currentMainScreen][0], menu_items[currentMainScreen][1]);
   }
 }
-
-
 
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         READ SENSOR METHODS                                                                |
@@ -529,11 +728,14 @@ void readSensors()
   pressure = pressureValue;                                                                                   // Read Pressure
 }
 
-
-
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         INITIALIZE METHOD                                                                  |
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
+void onAlarm()
+{
+  Serial.println("Alarm occured!");
+}
+
 void initializeRTC()
 {
   if (!rtc.begin())
@@ -553,6 +755,36 @@ void initializeRTC()
     // This line sets the RTC with an explicit date & time, for example to set
     // January 21, 2014 at 3am you would call:
     // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
+  }
+
+  rtc.disable32K();
+  // Making it so, that the alarm will trigger an interrupt
+  pinMode(CLOCK_INTERRUPT_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(CLOCK_INTERRUPT_PIN), onAlarm, FALLING);
+  // set alarm 1, 2 flag to false (so alarm 1, 2 didn't happen so far)
+  // if not done, this easily leads to problems, as both register aren't reset on reboot/recompile
+  rtc.clearAlarm(1);
+  rtc.clearAlarm(2);
+
+  // stop oscillating signals at SQW Pin
+  // otherwise setAlarm1 will fail
+  rtc.writeSqwPinMode(DS3231_OFF);
+
+  // turn off alarm 2 (in case it isn't off already)
+  // again, this isn't done at reboot, so a previously set alarm could easily go overlooked
+  rtc.disableAlarm(2);
+
+  // schedule an alarm 10 seconds in the future
+  if (!rtc.setAlarm1(
+          rtc.now() + TimeSpan(0,0,2,0),
+          DS3231_A1_Minute // this mode triggers the alarm when the seconds match. See Doxygen for other options
+          ))
+  {
+    Serial.println("Error, alarm wasn't set!");
+  }
+  else
+  {
+    Serial.println("Alarm will happen in 10 seconds!");
   }
 }
 void initializeLCD()
@@ -575,34 +807,7 @@ void initializeSensors()
   sensor.setDebounceTime(100);
   sensor.setCountMode(COUNT_FALLING);
 }
-// |--------------------------------------------------------------------------------------------------------------------------------------------|
-// |                                                         SETUP START                                                                        |
-// |--------------------------------------------------------------------------------------------------------------------------------------------|
 
-void setup()
-{
-  Serial.begin(9600);
-  initializeRTC();
-  initializeLCD();
-  initializeSensors();
-  InitializeButtons();
-}
-
-// |--------------------------------------------------------------------------------------------------------------------------------------------|
-// |                                                         LOOP START                                                                         |
-// |--------------------------------------------------------------------------------------------------------------------------------------------|
-
-void loop()
-{
-  ReadButtons();
-  if(refreshScreen == true){
-    printMainMenu();
-  }
-}
-
-// |--------------------------------------------------------------------------------------------------------------------------------------------|
-// |                                                         SAMPLE CODES                                                                       |
-// |--------------------------------------------------------------------------------------------------------------------------------------------|
 void sampleCode()
 {
   DateTime now = rtc.now();
@@ -621,33 +826,109 @@ void sampleCode()
   Serial.print(':');
   Serial.print(now.second(), DEC);
   Serial.println();
-
-  Serial.print(" since midnight 1/1/1970 = ");
-  Serial.print(now.unixtime());
-  Serial.print("s = ");
-  Serial.print(now.unixtime() / 86400L);
-  Serial.println("d");
-
-  // calculate a date which is 7 days, 12 hours, 30 minutes, 6 seconds into the future
-  DateTime future(now + TimeSpan(7, 12, 30, 6));
-
-  Serial.print(" now + 7d + 12h + 30m + 6s: ");
-  Serial.print(future.year(), DEC);
-  Serial.print('/');
-  Serial.print(future.month(), DEC);
-  Serial.print('/');
-  Serial.print(future.day(), DEC);
-  Serial.print(' ');
-  Serial.print(future.hour(), DEC);
-  Serial.print(':');
-  Serial.print(future.minute(), DEC);
-  Serial.print(':');
-  Serial.print(future.second(), DEC);
-  Serial.println();
-
   Serial.print("Temperature: ");
   Serial.print(rtc.getTemperature());
   Serial.println(" C");
 
   Serial.println();
 }
+// |--------------------------------------------------------------------------------------------------------------------------------------------|
+// |                                                         SETUP START                                                                        |
+// |--------------------------------------------------------------------------------------------------------------------------------------------|
+
+void setup()
+{
+  Serial.begin(9600);
+  initializeRTC();
+  initializeLCD();
+  initializeSensors();
+  InitializeButtons();
+  loadSettings();
+  refreshScreen = true;
+}
+
+// |--------------------------------------------------------------------------------------------------------------------------------------------|
+// |                                                         LOOP START                                                                         |
+// |--------------------------------------------------------------------------------------------------------------------------------------------|
+
+void loop()
+{
+  ReadButtons();
+  if (refreshScreen == true)
+  {
+    printScreens();
+  }
+  char date[10] = "hh:mm:ss";
+  rtc.now().toString(date);
+
+  sampleCode();
+  // the stored alarm value + mode
+  DateTime alarm1 = rtc.getAlarm1();
+  Ds3231Alarm1Mode alarm1mode = rtc.getAlarm1Mode();
+  char alarm1Date[12] = "DD hh:mm:ss";
+  alarm1.toString(alarm1Date);
+  Serial.print(" [Alarm1: ");
+  Serial.print(alarm1Date);
+  Serial.print(", Mode: ");
+  switch (alarm1mode)
+  {
+  case DS3231_A1_PerSecond:
+    Serial.print("PerSecond");
+    break;
+  case DS3231_A1_Second:
+    Serial.print("Second");
+    break;
+  case DS3231_A1_Minute:
+    Serial.print("Minute");
+    break;
+  case DS3231_A1_Hour:
+    Serial.print("Hour");
+    break;
+  case DS3231_A1_Date:
+    Serial.print("Date");
+    break;
+  case DS3231_A1_Day:
+    Serial.print("Day");
+    break;
+  }
+
+  // the value at SQW-Pin (because of pullup 1 means no alarm)
+  Serial.print("] SQW: ");
+  Serial.print(digitalRead(CLOCK_INTERRUPT_PIN));
+
+  // whether a alarm fired
+  Serial.print(" Fired: ");
+  Serial.print(rtc.alarmFired(1));
+
+  // Serial.print(" Alarm2: ");
+  // Serial.println(rtc.alarmFired(2));
+  // control register values (see https://datasheets.maximintegrated.com/en/ds/DS3231.pdf page 13)
+  // Serial.print(" Control: 0b");
+  // Serial.println(read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL), BIN);
+
+  // resetting SQW and alarm 1 flag
+  // using setAlarm1, the next alarm could now be configurated
+  if (rtc.alarmFired(1))
+  {
+    rtc.clearAlarm(1);
+    Serial.print(" - Alarm cleared");
+    if (!rtc.setAlarm1(
+            rtc.now() + TimeSpan(0,0,2,0),
+            DS3231_A1_Minute // this mode triggers the alarm when the seconds match. See Doxygen for other options
+            ))
+    {
+      Serial.println("Error, alarm wasn't set!");
+    }
+    else
+    {
+      Serial.println("Alarm will happen in 10 seconds!");
+    }
+  }
+  Serial.println();
+
+  delay(1000);
+}
+
+// |--------------------------------------------------------------------------------------------------------------------------------------------|
+// |                                                         SAMPLE CODES                                                                       |
+// |--------------------------------------------------------------------------------------------------------------------------------------------|
