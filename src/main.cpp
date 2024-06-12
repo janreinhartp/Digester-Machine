@@ -13,6 +13,10 @@
 RTC_DS3231 rtc;
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 #define CLOCK_INTERRUPT_PIN 19
+uint8_t recentSec;
+DateTime currentTime;
+DateTime lastSave;
+char alarm1String[12] = "hh:mm:ss";
 
 // SD card
 const int chipSelect = 7;
@@ -75,7 +79,7 @@ String setting_items[NUM_SETTING_ITEMS][2] = { // array with item names
     {"SAVE"}};
 
 int parametersTimer[NUM_SETTING_ITEMS] = {1, 1, 1, 1};
-int parametersTimerMaxValue[NUM_SETTING_ITEMS] = {1200, 24, 15, 60};
+int parametersTimerMaxValue[NUM_SETTING_ITEMS] = {1200, 24, 10, 60};
 
 String testmachine_items[NUM_TESTMACHINE_ITEMS] = { // array with item names
     "MAIN CONTACTOR",
@@ -86,7 +90,7 @@ String testmachine_items[NUM_TESTMACHINE_ITEMS] = { // array with item names
 int runTimeAdd = 20;
 int setTimeAdd = 30;
 int maxPresTimeAdd = 40;
-int saveIntervalTimeAdd = 40;
+int saveIntervalTimeAdd = 50;
 
 void saveSettings()
 {
@@ -655,43 +659,85 @@ void printTestScreen(String TestMenuTitle, String Job, bool Status, bool ExitFla
   refreshScreen = false;
 }
 
+void printRunAuto(int PH, int PRESSURE, int TEMP)
+{
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  char buff[] = "hh:mm:ss DD-MM-YYYY";
+  lcd.print(currentTime.toString(buff));
+  // lcd.print(currentTime.hour(), DEC);
+  // lcd.print(':');
+  // lcd.print(currentTime.minute(), DEC);
+  // lcd.print(':');
+  // lcd.print(currentTime.second(), DEC);
+  lcd.setCursor(0, 1);
+  char buff2[] = "hh:mm:ss DD-MM-YYYY";
+  lcd.print(lastSave.toString(buff2));
+  // lcd.print(lastSave.hour(), DEC);
+  // lcd.print(':');
+  // lcd.print(lastSave.minute(), DEC);
+  // lcd.print(':');
+  // lcd.print(lastSave.second(), DEC);
+  lcd.setCursor(0, 2);
+  lcd.print("PH");
+  lcd.setCursor(6, 2);
+  lcd.print("TEMP");
+  lcd.setCursor(12, 2);
+  lcd.print("PRESSURE");
+
+  lcd.setCursor(0, 3);
+  lcd.print(PH);
+  lcd.setCursor(6, 3);
+  lcd.print(TEMP);
+  lcd.setCursor(12, 3);
+  lcd.print(PRESSURE);
+}
+
 void printScreens()
 {
-  if (settingFlag == true)
+  if (menuFlag == false)
   {
-    if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
-    {
-      printSettingScreen(setting_items[currentSettingScreen][0], setting_items[currentSettingScreen][1], parametersTimer[currentSettingScreen], settingEditFlag, true);
-    }
-    else
-    {
-      printSettingScreen(setting_items[currentSettingScreen][0], setting_items[currentSettingScreen][1], parametersTimer[currentSettingScreen], settingEditFlag, false);
-    }
-  }
-  else if (testMenuFlag == true)
-  {
-    switch (currentTestMenuScreen)
-    {
-    case 0:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "Status", ContactorVFD.getMotorState(), false);
-      break;
-    case 1:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "Status", RunVFD.getMotorState(), false);
-      break;
-    case 2:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "Status", GasValve.getMotorState(), false);
-      break;
-    case 3:
-      printTestScreen(testmachine_items[currentTestMenuScreen], "", true, true);
-      break;
-
-    default:
-      break;
-    }
+    printRunAuto(ph, pressure, temp);
+    refreshScreen = false;
   }
   else
   {
-    printMainMenu(menu_items[currentMainScreen][0], menu_items[currentMainScreen][1]);
+    if (settingFlag == true)
+    {
+      if (currentSettingScreen == NUM_SETTING_ITEMS - 1)
+      {
+        printSettingScreen(setting_items[currentSettingScreen][0], setting_items[currentSettingScreen][1], parametersTimer[currentSettingScreen], settingEditFlag, true);
+      }
+      else
+      {
+        printSettingScreen(setting_items[currentSettingScreen][0], setting_items[currentSettingScreen][1], parametersTimer[currentSettingScreen], settingEditFlag, false);
+      }
+    }
+    else if (testMenuFlag == true)
+    {
+      switch (currentTestMenuScreen)
+      {
+      case 0:
+        printTestScreen(testmachine_items[currentTestMenuScreen], "Status", ContactorVFD.getMotorState(), false);
+        break;
+      case 1:
+        printTestScreen(testmachine_items[currentTestMenuScreen], "Status", RunVFD.getMotorState(), false);
+        break;
+      case 2:
+        printTestScreen(testmachine_items[currentTestMenuScreen], "Status", GasValve.getMotorState(), false);
+        break;
+      case 3:
+        printTestScreen(testmachine_items[currentTestMenuScreen], "", true, true);
+        break;
+
+      default:
+        break;
+      }
+    }
+    else
+    {
+      printMainMenu(menu_items[currentMainScreen][0], menu_items[currentMainScreen][1]);
+    }
   }
 }
 
@@ -717,7 +763,7 @@ void readPH()
   voltage = 5 / adc_resolution * measurings / samples;
 }
 
-void readSensors()
+void ReadSensors()
 {
   temp = thermocouple.readCelsius(); // Read Temp
   readPH();                          // Read PH
@@ -736,6 +782,33 @@ void onAlarm()
   Serial.println("Alarm occured!");
 }
 
+void SetAlarm()
+{
+  if (rtc.alarmFired(1))
+  {
+    DateTime now = rtc.now(); // Get the current time
+    lastSave = rtc.now();
+    char buff[] = "Alarm triggered at hh:mm:ss DDD, DD MMM YYYY";
+    Serial.println(now.toString(buff));
+
+    // Disable and clear alarm
+    rtc.disableAlarm(1);
+    rtc.clearAlarm(1);
+
+    if (!rtc.setAlarm1(
+            rtc.now() + TimeSpan(0, 0, parametersTimer[3], 0),
+            DS3231_A1_Minute // this mode triggers the alarm when the seconds match. See Doxygen for other options
+            ))
+    {
+      Serial.println("Error, alarm wasn't set!");
+    }
+    else
+    {
+      Serial.println("Alarm Set!");
+    }
+  }
+}
+
 void initializeRTC()
 {
   if (!rtc.begin())
@@ -749,58 +822,34 @@ void initializeRTC()
   if (rtc.lostPower())
   {
     Serial.println("RTC lost power, let's set the time!");
-    // When time needs to be set on a new device, or after a power loss, the
-    // following line sets the RTC to the date & time this sketch was compiled
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    // This line sets the RTC with an explicit date & time, for example to set
-    // January 21, 2014 at 3am you would call:
-    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
   }
 
   rtc.disable32K();
-  // Making it so, that the alarm will trigger an interrupt
   pinMode(CLOCK_INTERRUPT_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(CLOCK_INTERRUPT_PIN), onAlarm, FALLING);
-  // set alarm 1, 2 flag to false (so alarm 1, 2 didn't happen so far)
-  // if not done, this easily leads to problems, as both register aren't reset on reboot/recompile
+  rtc.disableAlarm(1);
+  rtc.disableAlarm(2);
   rtc.clearAlarm(1);
   rtc.clearAlarm(2);
 
-  // stop oscillating signals at SQW Pin
-  // otherwise setAlarm1 will fail
   rtc.writeSqwPinMode(DS3231_OFF);
 
-  // turn off alarm 2 (in case it isn't off already)
-  // again, this isn't done at reboot, so a previously set alarm could easily go overlooked
-  rtc.disableAlarm(2);
-
-  // schedule an alarm 10 seconds in the future
   if (!rtc.setAlarm1(
-          rtc.now() + TimeSpan(0,0,2,0),
-          DS3231_A1_Minute // this mode triggers the alarm when the seconds match. See Doxygen for other options
-          ))
+          rtc.now() + TimeSpan(0, 0, parametersTimer[3], 0),
+          DS3231_A1_Minute))
   {
     Serial.println("Error, alarm wasn't set!");
   }
   else
   {
-    Serial.println("Alarm will happen in 10 seconds!");
+    Serial.println("Alarm set");
   }
 }
 void initializeLCD()
 {
   lcd.init(); // initialize the lcd
-  // Print a message to the LCD.
   lcd.backlight();
-
-  // lcd.setCursor(3, 0);
-  // lcd.print("Hello, world!");
-  // lcd.setCursor(2, 1);
-  // lcd.print("Ywrobot Arduino!");
-  // lcd.setCursor(0, 2);
-  // lcd.print("Arduino LCM IIC 2004");
-  // lcd.setCursor(2, 3);
-  // lcd.print("Power By Ec-yuan!");
 }
 void initializeSensors()
 {
@@ -808,29 +857,31 @@ void initializeSensors()
   sensor.setCountMode(COUNT_FALLING);
 }
 
-void sampleCode()
+void RunRTC()
 {
-  DateTime now = rtc.now();
-
-  Serial.print(now.year(), DEC);
-  Serial.print('/');
-  Serial.print(now.month(), DEC);
-  Serial.print('/');
-  Serial.print(now.day(), DEC);
-  Serial.print(" (");
-  Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);
-  Serial.print(") ");
-  Serial.print(now.hour(), DEC);
-  Serial.print(':');
-  Serial.print(now.minute(), DEC);
-  Serial.print(':');
-  Serial.print(now.second(), DEC);
-  Serial.println();
-  Serial.print("Temperature: ");
-  Serial.print(rtc.getTemperature());
-  Serial.println(" C");
-
-  Serial.println();
+  currentTime = rtc.now();
+  if (recentSec != currentTime.second())
+  {
+    recentSec = currentTime.second();
+    Serial.print(currentTime.day(), DEC);
+    Serial.print('/');
+    Serial.print(currentTime.month(), DEC);
+    Serial.print('/');
+    Serial.print(currentTime.year(), DEC);
+    Serial.print(" (");
+    Serial.print(daysOfTheWeek[currentTime.dayOfTheWeek()]);
+    Serial.print(") ");
+    Serial.print(currentTime.hour(), DEC);
+    Serial.print(':');
+    Serial.print(currentTime.minute(), DEC);
+    Serial.print(':');
+    Serial.print(currentTime.second(), DEC);
+    Serial.println();
+    Serial.print("Temperature: ");
+    Serial.print(rtc.getTemperature());
+    Serial.println(" C");
+    refreshScreen = true;
+  }
 }
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         SETUP START                                                                        |
@@ -839,11 +890,11 @@ void sampleCode()
 void setup()
 {
   Serial.begin(9600);
+  loadSettings();
   initializeRTC();
   initializeLCD();
   initializeSensors();
   InitializeButtons();
-  loadSettings();
   refreshScreen = true;
 }
 
@@ -854,79 +905,14 @@ void setup()
 void loop()
 {
   ReadButtons();
+  ReadSensors();
+  RunRTC();
+  SetAlarm();
+  // Printing to LCD
   if (refreshScreen == true)
   {
     printScreens();
   }
-  char date[10] = "hh:mm:ss";
-  rtc.now().toString(date);
-
-  sampleCode();
-  // the stored alarm value + mode
-  DateTime alarm1 = rtc.getAlarm1();
-  Ds3231Alarm1Mode alarm1mode = rtc.getAlarm1Mode();
-  char alarm1Date[12] = "DD hh:mm:ss";
-  alarm1.toString(alarm1Date);
-  Serial.print(" [Alarm1: ");
-  Serial.print(alarm1Date);
-  Serial.print(", Mode: ");
-  switch (alarm1mode)
-  {
-  case DS3231_A1_PerSecond:
-    Serial.print("PerSecond");
-    break;
-  case DS3231_A1_Second:
-    Serial.print("Second");
-    break;
-  case DS3231_A1_Minute:
-    Serial.print("Minute");
-    break;
-  case DS3231_A1_Hour:
-    Serial.print("Hour");
-    break;
-  case DS3231_A1_Date:
-    Serial.print("Date");
-    break;
-  case DS3231_A1_Day:
-    Serial.print("Day");
-    break;
-  }
-
-  // the value at SQW-Pin (because of pullup 1 means no alarm)
-  Serial.print("] SQW: ");
-  Serial.print(digitalRead(CLOCK_INTERRUPT_PIN));
-
-  // whether a alarm fired
-  Serial.print(" Fired: ");
-  Serial.print(rtc.alarmFired(1));
-
-  // Serial.print(" Alarm2: ");
-  // Serial.println(rtc.alarmFired(2));
-  // control register values (see https://datasheets.maximintegrated.com/en/ds/DS3231.pdf page 13)
-  // Serial.print(" Control: 0b");
-  // Serial.println(read_i2c_register(DS3231_ADDRESS, DS3231_CONTROL), BIN);
-
-  // resetting SQW and alarm 1 flag
-  // using setAlarm1, the next alarm could now be configurated
-  if (rtc.alarmFired(1))
-  {
-    rtc.clearAlarm(1);
-    Serial.print(" - Alarm cleared");
-    if (!rtc.setAlarm1(
-            rtc.now() + TimeSpan(0,0,2,0),
-            DS3231_A1_Minute // this mode triggers the alarm when the seconds match. See Doxygen for other options
-            ))
-    {
-      Serial.println("Error, alarm wasn't set!");
-    }
-    else
-    {
-      Serial.println("Alarm will happen in 10 seconds!");
-    }
-  }
-  Serial.println();
-
-  delay(1000);
 }
 
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
