@@ -4,7 +4,7 @@
 #include "RTClib.h"
 #include <SPI.h>
 #include <SD.h>
-#include "max6675.h"
+#include <max6675.h>
 #include "ezButton.h"
 #include "control.h"
 #include <EEPROMex.h>
@@ -23,11 +23,11 @@ const int chipSelect = 7;
 File myFile;
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
-// Temp Sensor Declarations
-int soPin = 50;  // SO=Serial Out
-int csPin = 6;   // CS = chip select CS pin
-int sckPin = 52; // SCK = Serial Clock
-MAX6675 thermocouple(sckPin, csPin, soPin);
+int thermoDO = 8;
+int thermoCS = 6;
+int thermoCLK = 7;
+
+MAX6675 thermocouple(thermoCLK, thermoCS, thermoDO);
 
 // PH Sensor Declarations
 int pHSense = A0;
@@ -51,6 +51,9 @@ float voltage;
 // Gas Meter
 #define hall 5
 ezButton sensor(hall);
+
+// Data to save in SD Card
+String dataToSave;
 
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         MENU                                                                               |
@@ -883,6 +886,16 @@ void RunRTC()
     refreshScreen = true;
   }
 }
+
+String compileData(DateTime TimeOfRecording, int PH, int TEMP, int PRESSURE, int COUNT)
+{
+  String DataToSave = String(TimeOfRecording.timestamp(DateTime::TIMESTAMP_FULL)) + "," +
+                      String(PH) + "," +
+                      String(TEMP) + "," +
+                      String(PRESSURE) + "," +
+                      String(COUNT);
+  return DataToSave;
+}
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         SETUP START                                                                        |
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
@@ -914,7 +927,3 @@ void loop()
     printScreens();
   }
 }
-
-// |--------------------------------------------------------------------------------------------------------------------------------------------|
-// |                                                         SAMPLE CODES                                                                       |
-// |--------------------------------------------------------------------------------------------------------------------------------------------|
