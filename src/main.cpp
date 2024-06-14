@@ -44,6 +44,7 @@ int ph;
 int pressure;
 int measurings;
 float voltage;
+int recentCount;
 
 // Gas Meter
 #define hall 5
@@ -51,6 +52,16 @@ ezButton sensor(hall);
 
 // Data to save in SD Card
 String dataToSave;
+
+String compileData(DateTime TimeOfRecording, int PH, int TEMP, int PRESSURE, int COUNT)
+{
+  String DataToSave = String(TimeOfRecording.timestamp(DateTime::TIMESTAMP_FULL)) + "," +
+                      String(PH) + "," +
+                      String(TEMP) + "," +
+                      String(PRESSURE) + "," +
+                      String(COUNT);
+  return DataToSave;
+}
 
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         MENU                                                                               |
@@ -91,21 +102,34 @@ int runTimeAdd = 20;
 int setTimeAdd = 30;
 int maxPresTimeAdd = 40;
 int saveIntervalTimeAdd = 50;
+int countAdd = 60;
+
+void saveCount(int CountCurrent)
+{
+  EEPROM.writeInt(countAdd, CountCurrent);
+}
+void readCount()
+{
+  int currentCountFromEEPROM = EEPROM.readInt(countAdd);
+  Serial.println(currentCountFromEEPROM);
+  sensor.setCount(currentCountFromEEPROM);
+  recentCount = currentCountFromEEPROM;
+}
 
 void saveSettings()
 {
-  EEPROM.writeDouble(runTimeAdd, parametersTimer[0]);
-  EEPROM.writeDouble(setTimeAdd, parametersTimer[1]);
-  EEPROM.writeDouble(maxPresTimeAdd, parametersTimer[2]);
-  EEPROM.writeDouble(saveIntervalTimeAdd, parametersTimer[3]);
+  EEPROM.writeInt(runTimeAdd, parametersTimer[0]);
+  EEPROM.writeInt(setTimeAdd, parametersTimer[1]);
+  EEPROM.writeInt(maxPresTimeAdd, parametersTimer[2]);
+  EEPROM.writeInt(saveIntervalTimeAdd, parametersTimer[3]);
 }
 
 void loadSettings()
 {
-  parametersTimer[0] = EEPROM.readDouble(runTimeAdd);
-  parametersTimer[1] = EEPROM.readDouble(setTimeAdd);
-  parametersTimer[2] = EEPROM.readDouble(maxPresTimeAdd);
-  parametersTimer[3] = EEPROM.readDouble(saveIntervalTimeAdd);
+  parametersTimer[0] = EEPROM.readInt(runTimeAdd);
+  parametersTimer[1] = EEPROM.readInt(setTimeAdd);
+  parametersTimer[2] = EEPROM.readInt(maxPresTimeAdd);
+  parametersTimer[3] = EEPROM.readInt(saveIntervalTimeAdd);
 }
 
 char *secondsToHHMMSS(int total_seconds)
@@ -124,8 +148,8 @@ char *secondsToHHMMSS(int total_seconds)
 }
 
 Control ContactorVFD(A5);
-Control RunVFD(A6);
-Control GasValve(A7);
+Control RunVFD(A7);
+Control GasValve(A6);
 
 void stopAll()
 {
@@ -675,7 +699,7 @@ void printRunAuto(int PH, int PRESSURE, int TEMP, int COUNT)
   lcd.setCursor(11, 2);
   lcd.print("PSI");
   lcd.setCursor(16, 2);
-  lcd.print("PSI");
+  lcd.print("GAS");
 
   lcd.setCursor(0, 3);
   lcd.print(PH);
@@ -692,6 +716,7 @@ void printScreens()
   if (menuFlag == false)
   {
     printRunAuto(ph, pressure, temp, sensor.getCount());
+    Serial.println(compileData(currentTime, ph, temp, pressure, sensor.getCount()));
     refreshScreen = false;
   }
   else
@@ -766,6 +791,45 @@ void ReadSensors()
   pressureValue = analogRead(pressureInput);                                                                  // reads value from input pin and assigns to variable
   pressureValue = ((pressureValue - pressureZero) * pressuretransducermaxPSI) / (pressureMax - pressureZero); // conversion equation to convert analog reading to psi
   pressure = pressureValue;                                                                                   // Read Pressure
+}
+
+void RunValveViaSensor()
+{
+  if (pressure >= parametersTimer[2])
+  {
+    GasValve.relayOn();
+  }
+  else
+  {
+    GasValve.relayOff();
+  }
+}
+bool runAgitatorFlag = false;
+void CheckTimeForMixing()
+{
+  if (runAgitatorFlag == false)
+  {
+    if (currentTime.hour() == parametersTimer[1])
+    {
+      runAgitatorFlag = true;
+      ContactorVFD.relayOff();
+      RunVFD.relayOff();
+    }
+  }
+  else
+  {
+    RunVFD.run();
+    ContactorVFD.relayOn();
+
+    if (RunVFD.isStopped() == false)
+    {
+      RunVFD.run();
+      if (RunVFD.isTimerCompleted() == true)
+      {
+        RunVFD.stop();
+      }
+    }
+  }
 }
 
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
@@ -853,6 +917,19 @@ void initializeSensors()
   sensor.setCountMode(COUNT_FALLING);
 }
 
+void readGasSensor()
+{
+  sensor.loop();
+  if (recentCount != int(sensor.getCount()))
+  {
+    DateTime now = rtc.now();
+    int curCount = sensor.getCount();
+    saveCount(curCount);
+    recentCount = curCount;
+    Serial2.println(compileData(now, ph, temp, pressure, recentCount));
+  }
+}
+
 void RunRTC()
 {
   currentTime = rtc.now();
@@ -879,26 +956,6 @@ void RunRTC()
     refreshScreen = true;
   }
 }
-
-String compileData(DateTime TimeOfRecording, int PH, int TEMP, int PRESSURE, int COUNT)
-{
-  String DataToSave = String(TimeOfRecording.timestamp(DateTime::TIMESTAMP_FULL)) + "," +
-                      String(PH) + "," +
-                      String(TEMP) + "," +
-                      String(PRESSURE) + "," +
-                      String(COUNT);
-  return DataToSave;
-}
-
-void getRecentDataFromSdCard()
-{
-  while (Serial.available() <= 0)
-  {
-    Serial.print("GetData");
-    delay(200);
-  }
-  sensor.setCount(Serial.read());
-}
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         SETUP START                                                                        |
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
@@ -907,12 +964,14 @@ void setup()
 {
   Serial.begin(9600);
   Serial2.begin(9600);
-  getRecentDataFromSdCard();
   loadSettings();
   initializeRTC();
   initializeLCD();
   initializeSensors();
   InitializeButtons();
+  // saveCount();
+  readCount();
+  Serial.print("Current Count" + String(sensor.getCount()));
   refreshScreen = true;
 }
 
@@ -924,8 +983,10 @@ void loop()
 {
   ReadButtons();
   ReadSensors();
+  readGasSensor();
   RunRTC();
   SetAlarm();
+  RunValveViaSensor();
   // Printing to LCD
   if (refreshScreen == true)
   {
