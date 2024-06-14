@@ -3,7 +3,6 @@
 #include <LiquidCrystal_I2C.h>
 #include "RTClib.h"
 #include <SPI.h>
-#include <SD.h>
 #include <max6675.h>
 #include "ezButton.h"
 #include "control.h"
@@ -19,8 +18,6 @@ DateTime lastSave;
 char alarm1String[12] = "hh:mm:ss";
 
 // SD card
-const int chipSelect = 7;
-File myFile;
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 
 int thermoDO = 8;
@@ -662,45 +659,39 @@ void printTestScreen(String TestMenuTitle, String Job, bool Status, bool ExitFla
   refreshScreen = false;
 }
 
-void printRunAuto(int PH, int PRESSURE, int TEMP)
+void printRunAuto(int PH, int PRESSURE, int TEMP, int COUNT)
 {
   lcd.clear();
   lcd.setCursor(0, 0);
   char buff[] = "hh:mm:ss DD-MM-YYYY";
   lcd.print(currentTime.toString(buff));
-  // lcd.print(currentTime.hour(), DEC);
-  // lcd.print(':');
-  // lcd.print(currentTime.minute(), DEC);
-  // lcd.print(':');
-  // lcd.print(currentTime.second(), DEC);
   lcd.setCursor(0, 1);
   char buff2[] = "hh:mm:ss DD-MM-YYYY";
   lcd.print(lastSave.toString(buff2));
-  // lcd.print(lastSave.hour(), DEC);
-  // lcd.print(':');
-  // lcd.print(lastSave.minute(), DEC);
-  // lcd.print(':');
-  // lcd.print(lastSave.second(), DEC);
   lcd.setCursor(0, 2);
   lcd.print("PH");
   lcd.setCursor(6, 2);
   lcd.print("TEMP");
-  lcd.setCursor(12, 2);
-  lcd.print("PRESSURE");
+  lcd.setCursor(11, 2);
+  lcd.print("PSI");
+  lcd.setCursor(16, 2);
+  lcd.print("PSI");
 
   lcd.setCursor(0, 3);
   lcd.print(PH);
   lcd.setCursor(6, 3);
   lcd.print(TEMP);
-  lcd.setCursor(12, 3);
+  lcd.setCursor(11, 3);
   lcd.print(PRESSURE);
+  lcd.setCursor(16, 3);
+  lcd.print(COUNT);
 }
 
 void printScreens()
 {
   if (menuFlag == false)
   {
-    printRunAuto(ph, pressure, temp);
+    printRunAuto(ph, pressure, temp, sensor.getCount());
     refreshScreen = false;
   }
   else
@@ -793,6 +784,8 @@ void SetAlarm()
     lastSave = rtc.now();
     char buff[] = "Alarm triggered at hh:mm:ss DDD, DD MMM YYYY";
     Serial.println(now.toString(buff));
+
+    Serial2.println(compileData(now, ph, temp, pressure, sensor.getCount()));
 
     // Disable and clear alarm
     rtc.disableAlarm(1);
@@ -896,6 +889,16 @@ String compileData(DateTime TimeOfRecording, int PH, int TEMP, int PRESSURE, int
                       String(COUNT);
   return DataToSave;
 }
+
+void getRecentDataFromSdCard()
+{
+  while (Serial.available() <= 0)
+  {
+    Serial.print("GetData");
+    delay(200);
+  }
+  sensor.setCount(Serial.read());
+}
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 // |                                                         SETUP START                                                                        |
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
@@ -903,6 +906,8 @@ String compileData(DateTime TimeOfRecording, int PH, int TEMP, int PRESSURE, int
 void setup()
 {
   Serial.begin(9600);
+  Serial2.begin(9600);
+  getRecentDataFromSdCard();
   loadSettings();
   initializeRTC();
   initializeLCD();
