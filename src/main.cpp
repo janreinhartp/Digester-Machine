@@ -7,6 +7,8 @@
 #include "ezButton.h"
 #include "control.h"
 #include <EEPROMex.h>
+#include <TimeLib.h>
+#include <TimeAlarms.h>
 
 // COMPONENTS DECLARATION
 RTC_DS3231 rtc;
@@ -805,30 +807,33 @@ void RunValveViaSensor()
   }
 }
 bool runAgitatorFlag = false;
+void RunAutoStart()
+{
+  RunVFD.run();
+  if (RunVFD.isTimerCompleted() == true)
+  {
+    ContactorVFD.relayOff();
+    runAgitatorFlag = false;
+  }
+  else
+  {
+    ContactorVFD.relayOn();
+  }
+}
+
 void CheckTimeForMixing()
 {
   if (runAgitatorFlag == false)
   {
-    if (currentTime.hour() == parametersTimer[1])
+    if (currentTime.hour() == parametersTimer[1] && currentTime.minute() == 0 && currentTime.second() == 0)
     {
       runAgitatorFlag = true;
-      ContactorVFD.relayOff();
-      RunVFD.relayOff();
+      RunVFD.start();
     }
   }
   else
   {
-    RunVFD.run();
-    ContactorVFD.relayOn();
-
-    if (RunVFD.isStopped() == false)
-    {
-      RunVFD.run();
-      if (RunVFD.isTimerCompleted() == true)
-      {
-        RunVFD.stop();
-      }
-    }
+    RunAutoStart();
   }
 }
 
@@ -984,9 +989,13 @@ void loop()
   ReadButtons();
   ReadSensors();
   readGasSensor();
-  RunRTC();
-  SetAlarm();
-  RunValveViaSensor();
+  if (menuFlag == false)
+  {
+    RunValveViaSensor();
+    CheckTimeForMixing();
+    RunRTC();
+    SetAlarm();
+  }
   // Printing to LCD
   if (refreshScreen == true)
   {
