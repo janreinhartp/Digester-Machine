@@ -7,8 +7,6 @@
 #include "ezButton.h"
 #include "control.h"
 #include <EEPROMex.h>
-#include <TimeLib.h>
-#include <TimeAlarms.h>
 
 // COMPONENTS DECLARATION
 RTC_DS3231 rtc;
@@ -70,7 +68,7 @@ String compileData(DateTime TimeOfRecording, int PH, int TEMP, int PRESSURE, int
 // |--------------------------------------------------------------------------------------------------------------------------------------------|
 
 // Declaration of LCD Variables
-const int NUM_MAIN_ITEMS = 3;
+const int NUM_MAIN_ITEMS = 4;
 const int NUM_SETTING_ITEMS = 5;
 const int NUM_TESTMACHINE_ITEMS = 4;
 
@@ -82,6 +80,7 @@ bool menuFlag, settingFlag, settingEditFlag, testMenuFlag, refreshScreen = false
 String menu_items[NUM_MAIN_ITEMS][2] = { // array with item names
     {"SETTING", "ENTER TO EDIT"},
     {"TEST MACHINE", "ENTER TO TEST"},
+    {"RESET CURRENT COUNT", "ENTER TO RESET"},
     {"EXIT MENU", "ENTER TO RUN AUTO"}};
 
 String setting_items[NUM_SETTING_ITEMS][2] = { // array with item names
@@ -105,6 +104,25 @@ int setTimeAdd = 30;
 int maxPresTimeAdd = 40;
 int saveIntervalTimeAdd = 50;
 int countAdd = 60;
+
+Control ContactorVFD(A5);
+Control RunVFD(A7);
+Control GasValve(A6);
+
+char *secondsToHHMMSS(int total_seconds)
+{
+  int hours, minutes, seconds;
+
+  hours = total_seconds / 3600;         // Divide by number of seconds in an hour
+  total_seconds = total_seconds % 3600; // Get the remaining seconds
+  minutes = total_seconds / 60;         // Divide by number of seconds in a minute
+  seconds = total_seconds % 60;         // Get the remaining seconds
+
+  // Format the output string
+  static char hhmmss_str[7]; // 6 characters for HHMMSS + 1 for null terminator
+  sprintf(hhmmss_str, "%02d%02d%02d", hours, minutes, seconds);
+  return hhmmss_str;
+}
 
 void saveCount(int CountCurrent)
 {
@@ -132,26 +150,9 @@ void loadSettings()
   parametersTimer[1] = EEPROM.readInt(setTimeAdd);
   parametersTimer[2] = EEPROM.readInt(maxPresTimeAdd);
   parametersTimer[3] = EEPROM.readInt(saveIntervalTimeAdd);
+
+  RunVFD.setTimer(secondsToHHMMSS(parametersTimer[0]));
 }
-
-char *secondsToHHMMSS(int total_seconds)
-{
-  int hours, minutes, seconds;
-
-  hours = total_seconds / 3600;         // Divide by number of seconds in an hour
-  total_seconds = total_seconds % 3600; // Get the remaining seconds
-  minutes = total_seconds / 60;         // Divide by number of seconds in a minute
-  seconds = total_seconds % 60;         // Get the remaining seconds
-
-  // Format the output string
-  static char hhmmss_str[7]; // 6 characters for HHMMSS + 1 for null terminator
-  sprintf(hhmmss_str, "%02d%02d%02d", hours, minutes, seconds);
-  return hhmmss_str;
-}
-
-Control ContactorVFD(A5);
-Control RunVFD(A7);
-Control GasValve(A6);
 
 void stopAll()
 {
@@ -424,13 +425,27 @@ void readButtonDownState()
           {
             if (settingEditFlag == true)
             {
-              if (parametersTimer[currentSettingScreen] <= 0)
+              if (currentSettingScreen = 2)
               {
-                parametersTimer[currentSettingScreen] = 0;
+                if (parametersTimer[currentSettingScreen] <= 2)
+                {
+                  parametersTimer[currentSettingScreen] = 2;
+                }
+                else
+                {
+                  parametersTimer[currentSettingScreen] -= 1;
+                }
               }
               else
               {
-                parametersTimer[currentSettingScreen] -= 1;
+                if (parametersTimer[currentSettingScreen] <= 0)
+                {
+                  parametersTimer[currentSettingScreen] = 0;
+                }
+                else
+                {
+                  parametersTimer[currentSettingScreen] -= 1;
+                }
               }
             }
             else
@@ -583,6 +598,9 @@ void readButtonEnterState()
             else if (currentMainScreen == 1)
             {
               testMenuFlag = true;
+            }else if(currentMainScreen == 2){
+              sensor.resetCount();
+              saveCount(0);
             }
             else
             {
@@ -786,18 +804,29 @@ void readPH()
 
 void ReadSensors()
 {
-  temp = thermocouple.readCelsius(); // Read Temp
-  readPH();                          // Read PH
-  ph = phConvertion(voltage);        // Convert Raw Value
+  temp = int(rtc.getTemperature()); // Read Temp
+  readPH();                         // Read PH
+  ph = phConvertion(voltage);       // Convert Raw Value
 
   pressureValue = analogRead(pressureInput);                                                                  // reads value from input pin and assigns to variable
   pressureValue = ((pressureValue - pressureZero) * pressuretransducermaxPSI) / (pressureMax - pressureZero); // conversion equation to convert analog reading to psi
   pressure = pressureValue;                                                                                   // Read Pressure
 }
+bool releasePressureFlag = false;
 
 void RunValveViaSensor()
 {
   if (pressure >= parametersTimer[2])
+  {
+    releasePressureFlag = true;
+  }
+
+  if (pressure <= 2)
+  {
+    releasePressureFlag = false;
+  }
+
+  if (releasePressureFlag == true)
   {
     GasValve.relayOn();
   }
@@ -884,6 +913,8 @@ void initializeRTC()
       delay(10);
   }
 
+  // rtc.adjust(DateTime(F(__DATE__), F("07:59:30")));
+  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   if (rtc.lostPower())
   {
     Serial.println("RTC lost power, let's set the time!");
