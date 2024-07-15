@@ -164,7 +164,7 @@ void stopAll()
 void setTimers()
 {
   ContactorVFD.setTimer(secondsToHHMMSS(parametersTimer[0]));
-  RunVFD.setTimer(secondsToHHMMSS(60));
+  RunVFD.setTimer(secondsToHHMMSS(parametersTimer[0]));
   GasValve.setTimer(secondsToHHMMSS(60));
 }
 // Button Declaration
@@ -425,7 +425,7 @@ void readButtonDownState()
           {
             if (settingEditFlag == true)
             {
-              if (currentSettingScreen = 2)
+              if (currentSettingScreen == 2)
               {
                 if (parametersTimer[currentSettingScreen] <= 2)
                 {
@@ -913,7 +913,7 @@ void initializeRTC()
       delay(10);
   }
 
-  // rtc.adjust(DateTime(F(__DATE__), F("07:59:30")));
+  // rtc.adjust(DateTime(F(__DATE__), F("10:59:30")));
   // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   if (rtc.lostPower())
   {
