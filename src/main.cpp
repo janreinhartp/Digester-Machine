@@ -914,7 +914,7 @@ void initializeRTC()
   }
 
   // rtc.adjust(DateTime(F(__DATE__), F("10:59:30")));
-  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  //  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   if (rtc.lostPower())
   {
     Serial.println("RTC lost power, let's set the time!");
